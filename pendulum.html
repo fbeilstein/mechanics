@@ -1,0 +1,317 @@
+
+<!doctype html>
+
+<head>
+
+<title>test</title>
+<meta charset="utf-8"/>
+
+<link rel="stylesheet" href="https://codemirror.net/mode/python/../../lib/codemirror.css">
+<script src="https://codemirror.net/mode/python/../../lib/codemirror.js"></script>
+<script src="https://codemirror.net/mode/python/../../addon/edit/matchbrackets.js"></script>
+<script src="https://codemirror.net/mode/python/python.js"></script>
+<style type="text/css">.CodeMirror {border-top: 1px solid black; border-bottom: 1px solid black;}</style>
+
+
+<!--<script src="https://pyodide-cdn2.iodide.io/v0.15.0/full/pyodide.js"></script>-->
+<script src="https://cdn.jsdelivr.net/pyodide/v0.17.0/full/pyodide.js"></script>
+
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script> 
+
+<style>
+/* Style the tab */
+.tab {
+  overflow: hidden;
+  border: 1px solid #ccc;
+  background-color: #f1f1f1;
+}
+
+/* Style the buttons that are used to open the tab content */
+.tab button {
+  background-color: inherit;
+  position:relative;
+  left: 600px;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  padding: 14px 16px;
+  transition: 0.3s;
+}
+
+/* Change background color of buttons on hover */
+.tab button:hover {
+  background-color: #ddd;
+}
+
+/* Create an active/current tablink class */
+.tab button.active {
+  background-color: #ccc;
+}
+
+.code {
+  float:left;
+  width:50%;
+  height:600px;
+}
+
+.outputs {
+  float:right;
+  width:50%;
+  height:600px;
+  border: 2px, 0px, 3px, 0px;
+  overflow:scroll;
+  display:none;
+}
+
+</style>
+
+
+<script>
+function activate(global_id, activate_id, button_element) {
+  // activate clicked button
+  const button_holder = button_element.parentElement;
+  for (let i = 0; i < button_holder.children.length; i++)
+    button_holder.children[i].classList.remove("active");
+  button_element.classList.add("active");
+  // show corresponding plot
+  const plots_holder = document.getElementById(global_id);
+  for (let i = 0; i < plots_holder.children.length; i++)
+    plots_holder.children[i].style.display = 'none';
+  const current_plot = document.getElementById(activate_id);
+  current_plot.style.display = 'block';
+}
+
+async function main_pyodide(){
+  await loadPyodide({ indexURL : 'https://cdn.jsdelivr.net/pyodide/v0.17.0/full/' });
+}
+let pyodide_ready_promise = main_pyodide();
+</script>
+
+</head>
+
+<body>
+
+
+This is some text before plots
+
+<div style="width:100%">
+
+<div class="tab">
+  <button style="position:absolute;left:0px;" onclick="run_code_1(this);">RUN</button>
+  <button class="active" onclick="activate('outputs_1', 'console_1', this);">Console</button>
+  <button onclick="activate('outputs_1', 'pendulum_1', this);">Pendulum 3D</button>
+  <button onclick="activate('outputs_1', 'plot_1', this);">Plots</button>
+</div>
+
+<div class="code">
+<textarea rows="35" class="code" id="problem_1_code">
+import numpy as np
+
+theta = 1.0
+d_theta_1 = 0.0
+k = 0.1
+
+def get_position(dt):
+    global theta, d_theta_1
+    d_theta_2 = - k * np.sin(theta)
+    d_theta_1 = d_theta_1 + dt * d_theta_2
+    theta = theta + dt * d_theta_1
+    return theta
+</textarea>
+</div>
+
+<div id="outputs_1">
+  <div id="console_1"  class="outputs" style="display:block"></div>
+  <div id="pendulum_1" class="outputs"></div>
+  <div id="plot_1"     class="outputs"></div>
+</div>
+
+</div>
+
+
+<script>
+
+// prepare 
+var current_out = null;
+var old_log = console.log;
+console.log = text => 
+{
+  if (current_out && text)
+    current_out.innerHTML += '>>>' + text.replace('\n', '<br>') + '<br>';
+  else
+    old_log(text);
+}
+
+function get_editors()
+{
+  var editors = document.getElementsByTagName("textarea");
+  var result = {};
+  for (let i = 0; i < editors.length; i++)
+    if (editors[i].classList.contains("code"))
+    {
+      result[i] = CodeMirror.fromTextArea(editors[i], {
+        mode: {name: "python",
+               version: 2,
+               singleLineStringErrors: false},
+        lineNumbers: true,
+        indentUnit: 4,
+        matchBrackets: true,
+        lineWrapping: true
+      });
+      result[i].setSize(600, 600);
+      editors[i].value = i;
+    }
+    return result;
+}
+//window.languagePluginUrl = "/pyodide.js";
+var editors = get_editors();
+// -----------
+
+
+
+var running_block_1 = false;
+var timer_id = 0;
+
+async function run_code_1(button) {
+  if (running_block_1) {
+    button.innerHTML = 'RUN';
+    clearInterval(timer_id);
+    running_block_1 = false;
+    return;
+  }
+  running_block_1 = true;
+  const editor = document.getElementById("problem_1_code");
+  var pysource = editors[parseInt(editor.value)].getValue();
+  //console.log(pysource);
+  const pyconsole = document.getElementById("console_1");
+  current_out = pyconsole;
+  message_callback = function(data) {
+    pyconsole.innerHTML += '<br> >>>' + data + '<br>';
+  }
+  //pyodide.runPython(pysource);//.catch((err) => { message_callback(err) }); //init python
+  await pyodide_ready_promise;
+  try {
+    let output = await pyodide.runPythonAsync(pysource);
+    //message_callback(output);
+  } catch(err) {
+    message_callback(err);
+  }
+  timer_id = setInterval(pendulum_swing, 100);
+  button.innerHTML = 'STOP';
+}
+
+async function pendulum_swing() {
+  if (!to_draw)
+    return;
+  try {
+    let result = await pyodide.runPythonAsync("get_position(0.1)");
+    let theta = parseFloat(result);
+    plot_pendulum(Math.sin(theta), 0.0, -Math.cos(theta));
+  } catch(err) {
+    message_callback(err);
+  }
+
+}
+
+
+/// sphere plotting, nothing interesting
+a = [];
+b = [];
+c = [];
+
+phiArr = [];
+thetaArr = [];
+function makeInterval(startValue, stopValue, numPoints) {
+    var arr = [];
+    var step = (stopValue - startValue) / (numPoints - 1);
+    for (var i = 0; i < numPoints; i++) {
+      arr.push(startValue + (step * i));
+    }
+    return arr;
+  }
+
+phiArr = makeInterval(0, Math.PI/2, 20);  
+thetaArr = makeInterval(0, 2*Math.PI, 20); 
+
+for (i=0; i<thetaArr.length; i++){
+    for (j=0; j<phiArr.length; j++){
+        a.push(0.1 * Math.cos(thetaArr[i]) * Math.sin(phiArr[j]));
+        b.push(0.1 * Math.sin(thetaArr[i]) * Math.sin(phiArr[j]));   
+        c.push(0.1 * Math.cos(phiArr[j]));
+    }
+}
+//// ----------
+
+var plotted_once = false;
+var to_draw = true;
+var layout;
+
+function plot_pendulum(x, y, z) {
+  current_out = null;
+  console.log(x, y, z);
+  var cell_for_plot = document.getElementById("pendulum_1");
+  if (cell_for_plot.style.display != 'block')
+    return;
+
+  var data = [{
+    'type': 'scatter3d', 
+    'mode': 'lines', 
+    'name': 'scatter_1', 
+    'x': [0.0, x], 
+    'y': [0.0, y], 
+    'z': [0.0, z], 
+    'line': {'color': 'blue', 'width': 3}
+  },{
+    opacity: 1.0,
+    color: 'rgb(211,211,211)',
+    type: 'mesh3d',
+    name: 'messh',
+    x: a.map(v => v + x),
+    y: b.map(v => v + y),
+    z: c.map(v => v + z),
+  },{
+    opacity: 1.0,
+    color: 'rgb(211,211,211)',
+    type: 'mesh3d',
+    name: 'messh',
+    x: a.map(v => v + x),
+    y: b.map(v => v + y),
+    z: c.map(v => -v + z),
+  }];
+  if (!plotted_once) {
+    layout = {
+      title: 'Pendulum',
+      scene: {
+        domain: { 'x': [0.0, 1.0], 'y': [0.0, 1.0] }, 
+        zaxis: {'range': [-1.1, 0.0]},
+        xaxis: {'range': [-1.0, 1.0]},
+        yaxis: {'range': [-1.0, 1.0]},
+        aspectmode: 'cube' 
+      },
+      width: 600,
+      height: 600,
+      autosize: false,
+      showlegend: false,
+      margin: {l: 50, r: 50, b: 50, t: 50}
+    };
+  }
+
+  Plotly.react(cell_for_plot, data, layout);
+
+  if (!plotted_once) {
+    cell_for_plot.on('plotly_relayout', function(data){layout = cell_for_plot.layout;});
+    cell_for_plot.addEventListener("mousedown", function(data){to_draw = false;});
+    cell_for_plot.addEventListener("mouseup", function(data){to_draw = true;});
+    plotted_once = true;
+  }
+
+}
+
+
+
+
+
+    </script>
+</body>
+
+</html>
