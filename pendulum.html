@@ -18,12 +18,15 @@
 
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script> 
 
+<script src='https://www.gstatic.com/external_hosted/mathjax/latest/MathJax.js?config=default'></script>
+
 <style>
 /* Style the tab */
 .tab {
   overflow: hidden;
   border: 1px solid #ccc;
   background-color: #f1f1f1;
+  margin: 0px -3px 0px 0px;
 }
 
 /* Style the buttons that are used to open the tab content */
@@ -49,21 +52,27 @@
 }
 
 .code {
-  float:left;
-  width:50%;
-  height:600px;
+  float: left;
+  width: 600px;
+  height: 600px;
 }
 
-.outputs {
-  float:right;
-  width:50%;
-  height:600px;
-  border: 2px, 0px, 3px, 0px;
-  overflow:scroll;
-  display:none;
+.main {
+  width: 100%;
+  height: 600px;
+}
+
+.out_container {
+  width: 55%;
+  height: 600px;
+  display: block;
+  border: 2px solid black;
+  margin: 0% 0% 0% 45%;
+  z-index: 100;
 }
 
 </style>
+
 
 
 <script>
@@ -91,10 +100,22 @@ let pyodide_ready_promise = main_pyodide();
 
 <body>
 
+<h1>Exploring the pendulum</h1>
 
-This is some text before plots
+This is pendulum<br>
+<img width=100 src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/Pendulum_1_%28PSF%29.png/714px-Pendulum_1_%28PSF%29.png"><br>
+Kinetic energy
+$$
+E_{kin} = \frac{m v^2}{2} = \frac{m l^2 \dot{\theta}^2 }{2}
+$$
+Potential energy
+$$
+E_{pot} = m g \Delta h = m g (l - l \cos(\theta)) = m g l (1 - \cos(\theta))
+$$
 
-<div style="width:100%">
+
+
+<div class="main">
 
 <div class="tab">
   <button style="position:absolute;left:0px;" onclick="run_code_1(this);">RUN</button>
@@ -110,6 +131,8 @@ import numpy as np
 theta = 1.0
 d_theta_1 = 0.0
 k = 0.1
+m = 1.0
+g = 10.0
 
 def get_position(dt):
     global theta, d_theta_1
@@ -117,16 +140,31 @@ def get_position(dt):
     d_theta_1 = d_theta_1 + dt * d_theta_2
     theta = theta + dt * d_theta_1
     return theta
+    
+def get_energies():
+    l = g / k
+    potential = m * g * l * (1.0 - np.cos(theta))
+    kinetic = m * (d_theta_1 * l)**2 / 2.0
+    summary = potential + kinetic
+    return kinetic, potential, summary
 </textarea>
 </div>
 
 <div id="outputs_1">
-  <div id="console_1"  class="outputs" style="display:block"></div>
-  <div id="pendulum_1" class="outputs"></div>
-  <div id="plot_1"     class="outputs"></div>
+  <div id="console_1"  class="out_container" style="display:block"></div>
+  <div id="pendulum_1" class="out_container" style="display:none"></div>
+  <div id="plot_1"     class="out_container" style="display:none"></div>
 </div>
 
 </div>
+<br><br><br>
+
+
+Perform experiments with the previous code.
+check that
+<ul>
+  <li> Energy conserves </li>
+</ul>
 
 
 <script>
@@ -171,42 +209,53 @@ var editors = get_editors();
 
 var running_block_1 = false;
 var timer_id = 0;
+var current_time = 0.0;
 
 async function run_code_1(button) {
   if (running_block_1) {
     button.innerHTML = 'RUN';
     clearInterval(timer_id);
     running_block_1 = false;
+    current_out = null;
     return;
   }
   running_block_1 = true;
+  button.innerHTML = 'STOP';
   const editor = document.getElementById("problem_1_code");
   var pysource = editors[parseInt(editor.value)].getValue();
-  //console.log(pysource);
   const pyconsole = document.getElementById("console_1");
   current_out = pyconsole;
   message_callback = function(data) {
     pyconsole.innerHTML += '<br> >>>' + data + '<br>';
   }
-  //pyodide.runPython(pysource);//.catch((err) => { message_callback(err) }); //init python
   await pyodide_ready_promise;
   try {
-    let output = await pyodide.runPythonAsync(pysource);
-    //message_callback(output);
+    current_time = 0.0;
+    await pyodide.runPythonAsync(pysource);
   } catch(err) {
     message_callback(err);
   }
   timer_id = setInterval(pendulum_swing, 100);
-  button.innerHTML = 'STOP';
 }
+
 
 async function pendulum_swing() {
   if (!to_draw)
     return;
+  current_time += 0.1;
   try {
     let result = await pyodide.runPythonAsync("get_position(0.1)");
     let theta = parseFloat(result);
     plot_pendulum(Math.sin(theta), 0.0, -Math.cos(theta));
+  } catch(err) {
+    message_callback(err);
+  }
+  try {
+    let energies = await pyodide.runPythonAsync("get_energies()");
+    let kinetic = parseFloat(energies.get(0));
+    let potential = parseFloat(energies.get(1));
+    let sum = parseFloat(energies.get(2));
+    plot_energies(kinetic, potential, sum);
   } catch(err) {
     message_callback(err);
   }
@@ -247,11 +296,12 @@ var to_draw = true;
 var layout;
 
 function plot_pendulum(x, y, z) {
-  current_out = null;
-  console.log(x, y, z);
   var cell_for_plot = document.getElementById("pendulum_1");
   if (cell_for_plot.style.display != 'block')
+  {
+    plotted_once = false;
     return;
+  }
 
   var data = [{
     'type': 'scatter3d', 
@@ -296,7 +346,10 @@ function plot_pendulum(x, y, z) {
     };
   }
 
-  Plotly.react(cell_for_plot, data, layout);
+  if (!plotted_once)
+    Plotly.newPlot(cell_for_plot, data, layout);
+  else
+    Plotly.react(cell_for_plot, data, layout);
 
   if (!plotted_once) {
     cell_for_plot.on('plotly_relayout', function(data){layout = cell_for_plot.layout;});
@@ -307,6 +360,69 @@ function plot_pendulum(x, y, z) {
 
 }
 
+
+k_energy = [];
+p_energy = [];
+s_energy = [];
+e_time = [];
+
+function plot_energies(kin, pot, sum) {
+  if (k_energy.length > 100)
+    k_energy.shift();
+  k_energy.push(kin);
+  if (p_energy.length > 100)
+    p_energy.shift();
+  p_energy.push(pot);
+  if (s_energy.length > 100)
+    s_energy.shift();
+  s_energy.push(sum);
+  if (e_time.length > 100)
+    e_time.shift();
+  e_time.push(current_time);
+  
+  var cell_for_plot = document.getElementById("plot_1");
+  if (cell_for_plot.style.display != 'block')
+    return;
+  
+  layout = {
+    title: 'Energies',
+    xaxis1: {'domain': [0.0, 1.0], 'fixedrange': false},
+    yaxis1: {'domain': [0.0, 1.0], 'fixedrange': false},
+    xaxis_title: "time, sec",
+    yaxis_title: "energy, J",
+    width: 600,
+    height: 600,
+    autosize: false,
+    showlegend: true,
+    margin: {l: 50, r: 50, b: 50, t: 50}
+  };
+  var data = [{
+    'type': 'scatter', 
+    'mode': 'lines', 
+    'name': 'kinetic energy', 
+    'x': e_time, 
+    'y': k_energy,
+    'line': {'color': 'red', 'width': 3}
+  },{
+    'type': 'scatter', 
+    'mode': 'lines', 
+    'name': 'potential energy', 
+    'x': e_time, 
+    'y': p_energy,
+    'line': {'color': 'blue', 'width': 3}
+  },{
+    'type': 'scatter', 
+    'mode': 'lines', 
+    'name': 'total energy', 
+    'x': e_time, 
+    'y': s_energy,
+    'line': {'color': 'black', 'width': 3}
+  }];
+  
+  if (cell_for_plot.layout)
+    layout = cell_for_plot.layout;
+  Plotly.newPlot(cell_for_plot, data, layout);
+}
 
 
 
